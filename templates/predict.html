@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Retail Analysis with ML - Azure SQL</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.2/dist/css/bootstrap.min.css">
+<style>
+    .button-container {
+            margin-left: auto;
+        }
+
+        .button-container {
+    margin-bottom: 20px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 20px;
+}
+
+.risk-summary {
+    background: white;
+    padding: 15px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.household-scores {
+    background: white;
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.score-table {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.table-danger {
+    background-color: rgba(220, 53, 69, 0.1);
+}
+
+.table-success {
+    background-color: rgba(40, 167, 69, 0.1);
+}
+
+.btn-primary {
+    display: inline-flex;
+    align-items: center;
+    padding: 8px 16px;
+    border-radius: 4px;
+    transition: background-color 0.3s ease;
+}
+
+.btn-danger {
+    background-color: #dc3545;
+    color: white;
+    display: inline-flex;
+    align-items: center;
+    padding: 8px 16px;
+    border-radius: 4px;
+    transition: background-color 0.3s ease;
+}
+
+.btn-danger:hover {
+    background-color: #c82333;
+    color: white;
+    text-decoration: none;
+}
+
+.mr-2 {
+    margin-right: 0.5rem;
+}
+.model-container {
+    background: white;
+    border-radius: 8px;
+    padding: 20px;
+    margin: 20px 0;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.model-info {
+    background: #f8f9fa;
+    padding: 15px;
+    border-radius: 6px;
+    margin-bottom: 20px;
+}
+
+.loading {
+    color: #007bff;
+}
+
+.error {
+    color: #dc3545;
+}
+
+.success {
+    color: #28a745;
+}
+</style>
+
+    <style>
+        .error { color: red; }
+        .success { color: green; }
+        .loading { color: blue; }
+    </style>
+</head>
+<body>
+    <div class="button-container text-right mb-4">
+        <a href="{{ url_for('home') }}" class="btn btn-primary mr-2">
+            <i class="fas fa-chart-line mr-2"></i>home
+        </a>
+        <a href="{{ url_for('demographicsandengagement') }}" class="btn btn-primary mr-2">
+            <i class="fas fa-chart-bar mr-2"></i>Dashboards
+        </a>
+        <a href="{{ url_for('uploaddatasets') }}" class="btn btn-primary">
+            <i class="fas fa-chart-bar mr-2"></i>Upload
+        </a>
+        <a href="{{ url_for('logout') }}" class="btn btn-danger">
+            <i class="fas fa-sign-out-alt mr-2"></i>Logout
+        </a>
+    </div>
+    
+    <div>
+        <h2>Model Training</h2>
+        <div id="existing_model_info"></div>
+    <button onclick="trainModel()" id="trainButton" class="btn btn-primary">
+        <i class="fas fa-cogs mr-2"></i>Train New Model
+    </button>
+    <div id="training_status"></div>
+    <div id="training_results"></div>
+    </div>
+    
+    <div>
+        <h2>Feature Importance</h2>
+        <div id="feature_importance_plot"></div>
+    </div>
+    
+    <div class="recommendations-container">
+        <h2>Product Recommendations</h2>
+        <div id="recommendations_table"></div>
+    </div>
+
+    <div class="chart-container">
+        <h2>Customer Engagement Analysis</h2>
+        <div id="engagement_plot"></div>
+    </div>
+    
+    <div class="metrics-container">
+        <div class="metric-card">
+            <h3>At-Risk Customers</h3>
+            <div id="risk_metric"></div>
+        </div>
+        <div class="metric-card">
+            <h3>Average Customer Value</h3>
+            <div id="value_metric"></div>
+        </div>
+    </div>
+    
+    <div class="chart-container">
+        <h2>Customer Retention Analysis</h2>
+        <div id="retention_plot"></div>
+    </div>
+    
+    <style>
+    .visualization-container {
+        margin: 20px;
+        padding: 20px;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+    }
+    
+    .chart-container {
+        margin: 20px 0;
+        padding: 15px;
+        background: #fff;
+        box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+    </style>
+    
+    <script>
+        $(document).ready(function() {
+    checkExistingModel();
+});
+
+function loadAllAnalytics() {
+            // Load engagement metrics
+            $.get('/analyze_transactions', function(data) {
+    // Update metrics cards with risk information
+    $('#risk_metric').html(`
+        <div class="risk-summary">
+            <h4>Risk Analysis</h4>
+            <p><strong>At Risk:</strong> ${data.at_risk_count} out of ${data.total_customers} customers</p>
+            <p><strong>Risk Threshold:</strong> ${(data.engagement_metrics.risk_threshold * 100).toFixed(2)}%</p>
+        </div>
+        <div class="household-scores">
+            <h4>Household Risk Scores</h4>
+            <div class="score-table">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>Household</th>
+                            <th>Risk Score</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${data.engagement_metrics.households.map((household, index) => `
+                            <tr class="${data.engagement_metrics.scores[index] > data.engagement_metrics.risk_threshold ? 'table-danger' : 'table-success'}">
+                                <td>${household}</td>
+                                <td>${(data.engagement_metrics.scores[index] * 100).toFixed(2)}%</td>
+                                <td>${data.engagement_metrics.scores[index] > data.engagement_metrics.risk_threshold ? 'At Risk' : 'Normal'}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    `);
+}).fail(function(error) {
+    console.error('Error loading engagement metrics:', error);
+});
+            
+            // Load retention metrics
+            $.get('/retention_analysis', function(data) {
+                plotRetentionMetrics(data);
+                
+                // Calculate and display average customer value
+                const avgValue = data.customer_value.reduce((a, b) => a + b, 0) / data.customer_value.length;
+                $('#value_metric').html(`
+                    <h4>$${avgValue.toFixed(2)}</h4>
+                    <p>per customer</p>
+                `);
+            }).fail(function(error) {
+                console.error('Error loading retention metrics:', error);
+            });
+        }
+        
+        // Call this when page loads
+        $(document).ready(function() {
+            loadAllAnalytics();
+        });
+        
+        function checkExistingModel() {
+    $.get('/get_model_status', function(data) {
+        if (data.exists) {
+            $('#existing_model_info').html(`
+                <div class="model-info">
+                    <h4>Current Model</h4>
+                    <p><strong>Last Trained:</strong> ${data.last_trained}</p>
+                    <p><strong>Model File:</strong> ${data.model_filename}</p>
+                    <p><strong>MSE:</strong> ${data.mse.toFixed(4)}</p>
+                </div>
+            `);
+        } else {
+            $('#existing_model_info').html(`
+                <div class="model-info">
+                    <p>No trained model found. Click the button below to train a new model.</p>
+                </div>
+            `);
+        }
+    });
+}
+
+function trainModel() {
+    $('#trainButton').prop('disabled', true);
+    $('#training_status').html('<p class="loading">Loading data and training model...</p>');
+    
+    $.get('/train_model', function(data) {
+        if (data.error) {
+            $('#training_status').html(`<p class="error">Error: ${data.error}</p>`);
+        } else {
+            $('#training_status').html('<p class="success">Model trained successfully!</p>');
+            
+            // Update the existing model info
+            checkExistingModel();
+            
+            // Plot feature importance
+            let trace = {
+                x: data.feature_importance.importance,
+                y: data.feature_importance.features,
+                type: 'bar',
+                orientation: 'h'
+            };
+            
+            let layout = {
+                title: 'Feature Importance',
+                xaxis: { title: 'Importance Score' },
+                yaxis: { 
+                    title: 'Features',
+                    automargin: true 
+                },
+                margin: {
+                    l: 200,
+                    r: 20,
+                    t: 40,
+                    b: 60
+                },
+                height: 600
+            };
+            
+            Plotly.newPlot('feature_importance_plot', [trace], layout);
+        }
+    }).fail(function(jqXHR, textStatus, errorThrown) {
+        $('#training_status').html(`<p class="error">Failed to train model: ${errorThrown}</p>`);
+    }).always(function() {
+        $('#trainButton').prop('disabled', false);
+    });
+}
+        
+    // Get predictions
+    function loadRecommendations() {
+            $.get('/predict', function(data) {
+                let tableHTML = `
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Department - Commodity</th>
+                                <th>Predicted Spend ($)</th>
+                                <th>Product Count</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+                
+                for (let i = 0; i < data.department_commodity.length; i++) {
+                    tableHTML += `
+                        <tr>
+                            <td>${data.department_commodity[i][0]} - ${data.department_commodity[i][1]}</td>
+                            <td>$${data.predicted_spend[i].toFixed(2)}</td>
+                            <td>${data.product_count[i].toLocaleString()}</td>
+                        </tr>
+                    `;
+                }
+                
+                tableHTML += '</tbody></table>';
+                $('#recommendations_table').html(tableHTML);
+            }).fail(function(error) {
+                $('#recommendations_table').html('<p class="error">Error loading recommendations</p>');
+            });
+        }
+        
+        // Load recommendations when page loads
+        $(document).ready(function() {
+            loadRecommendations();
+        });
+
+        function plotCorrelationMatrix(data) {
+    const trace = {
+        type: 'heatmap',
+        z: data.z,
+        x: data.x,
+        y: data.y,
+        colorscale: 'RdBu',
+        zmin: -1,
+        zmax: 1,
+        text: data.text,
+        hoverongaps: false
+    };
+
+    const layout = {
+        title: 'Correlation Matrix of Customer Engagement Features',
+        height: 600,
+        width: 800,
+        xaxis: {
+            side: 'bottom'
+        },
+        yaxis: {
+            autorange: 'reversed'
+        }
+    };
+
+    Plotly.newPlot('correlation_plot', [trace], layout);
+}
+
+function plotEngagementMetrics(data) {
+    const trace = {
+        type: 'histogram',
+        x: data.engagement_metrics.scores,
+        nbinsx: 30,
+        name: 'Engagement Distribution'
+    };
+    
+    const layout = {
+        title: 'Customer Engagement Distribution',
+        xaxis: { title: 'Engagement Score' },
+        yaxis: { title: 'Number of Customers' },
+        shapes: [{
+            type: 'line',
+            x0: data.engagement_metrics.risk_threshold,
+            x1: data.engagement_metrics.risk_threshold,
+            y0: 0,
+            y1: 1,
+            yref: 'paper',
+            line: {
+                color: 'red',
+                width: 2,
+                dash: 'dash'
+            }
+        }]
+    };
+    
+    Plotly.newPlot('engagement_plot', [trace], layout);
+}
+
+function plotRetentionMetrics(data) {
+    const trace = {
+        type: 'scatter',
+        x: data.customer_lifetime,
+        y: data.customer_value,
+        mode: 'markers',
+        marker: {
+            size: data.basket_count,
+            sizeref: 2 * Math.max(...data.basket_count) / (40**2),
+            sizemode: 'area'
+        }
+    };
+    
+    const layout = {
+        title: 'Customer Value vs Lifetime',
+        xaxis: { title: 'Days Active' },
+        yaxis: { title: 'Total Spend ($)' }
+    };
+    
+    Plotly.newPlot('retention_plot', [trace], layout);
+}
+
+
+function plotFeatureImportance(data) {
+    const trace = {
+        type: 'bar',
+        x: data.importance,
+        y: data.features,
+        orientation: 'h',
+        marker: {
+            color: 'skyblue'
+        }
+    };
+
+    const layout = {
+        title: 'Feature Importance for Customer Disengagement',
+        height: 400,
+        width: 800,
+        xaxis: {
+            title: 'Correlation with Customer Status'
+        },
+        yaxis: {
+            title: 'Features'
+        },
+        margin: {
+            l: 200
+        }
+    };
+
+    Plotly.newPlot('feature_importance', [trace], layout);
+}
+
+// Add this to your loadRecommendations() function
+function loadAnalytics() {
+    $.get('/get_analytics', function(data) {
+        plotCorrelationMatrix(data.correlation_matrix);
+        plotFeatureImportance(data.feature_importance);
+    });
+}
+
+// Call this when page loads
+$(document).ready(function() {
+    loadRecommendations();
+    loadAnalytics();
+});
+    </script>
+
+<style>
+    #feature_importance_plot {
+        margin: 20px 0;
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+    }
+    
+    .plot-container {
+        margin: 20px 0;
+    }
+    
+    .error { color: red; }
+    .success { color: green; }
+    .loading { color: blue; }
+</style>
+
+<style>
+    .table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 20px 0;
+    }
+    
+    .table th, .table td {
+        padding: 12px;
+        text-align: left;
+        border-bottom: 1px solid #ddd;
+    }
+    
+    .table th {
+        background-color: #f5f5f5;
+    }
+    
+    .error {
+        color: red;
+        padding: 10px;
+    }
+    </style>
+
+</body>
+</html>
