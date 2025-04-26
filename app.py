@@ -181,35 +181,63 @@ def prepare_features(hh, pr, tr):
 # --- Model training endpoint ---
 @app.route('/train_model')
 def train_model():
-    hh, pr, tr = load_data()
-    if hh is None:
-        return jsonify({'error':'DB load failed'}), 500
-    X, y, merged = prepare_features(hh, pr, tr)
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-    model = GradientBoostingRegressor(n_estimators=100, learning_rate=0.1, max_depth=3, random_state=42)
-    model.fit(X_train, y_train)
-    mse = mean_squared_error(y_test, model.predict(X_test))
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    fname = f'gb_model_{ts}.pkl'
-    joblib.dump(model, fname)
-    # Persist metrics
-    conn = get_db_connection(); cur = conn.cursor()
-    cur.execute("""
-        IF NOT EXISTS (
-          SELECT * FROM sysobjects WHERE name='model_metrics' AND xtype='U'
-        )
-        CREATE TABLE model_metrics (
-          id INT IDENTITY(1,1) PRIMARY KEY,
-          model_filename VARCHAR(255),
-          mse FLOAT, timestamp DATETIME
-        )
-    """)
-    cur.execute(
-        "INSERT INTO model_metrics (model_filename,mse,timestamp) VALUES (?,?,GETDATE())",
-        (fname, mse)
+    # Load & prepare data (unchanged)
+    households, products, transactions = load_data()
+    if households is None or products is None or transactions is None:
+        return jsonify({'error': 'Failed to load data from database'}), 500
+
+    X, y, merged_data = prepare_features(households, products, transactions)
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42
     )
-    conn.commit(); conn.close()
-    return jsonify({'mse': mse, 'model_filename': fname})
+
+    # Train
+    gb_model = GradientBoostingRegressor(
+        n_estimators=100, learning_rate=0.1, max_depth=3, random_state=42
+    )
+    gb_model.fit(X_train, y_train)
+
+    # Evaluate
+    y_pred = gb_model.predict(X_test)
+    mse = mean_squared_error(y_test, y_pred)
+
+    # Save timestamped model
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    model_filename = f'gb_model_{timestamp}.pkl'
+    joblib.dump(gb_model, model_filename)
+
+    # **Also save the default model file** so /predict can load it
+    joblib.dump(gb_model, 'gb_model.pkl')
+
+    # Persist metrics into your SQL table (unchanged)
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            IF NOT EXISTS (
+              SELECT * FROM sysobjects WHERE name='model_metrics' AND xtype='U'
+            )
+            CREATE TABLE model_metrics (
+              id INT IDENTITY(1,1) PRIMARY KEY,
+              model_filename VARCHAR(255),
+              mse FLOAT,
+              timestamp DATETIME
+            )
+        """)
+        cursor.execute(
+            "INSERT INTO model_metrics (model_filename, mse, timestamp) VALUES (?, ?, GETDATE())",
+            (model_filename, mse)
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Error storing metrics: {e}")
+
+    return jsonify({
+        'mse': mse,
+        'model_filename': model_filename
+    })
+
 
 # --- Model status endpoint ---
 @app.route('/get_model_status')
