@@ -181,35 +181,39 @@ def prepare_features(hh, pr, tr):
 # --- Model training endpoint ---
 @app.route('/train_model')
 def train_model():
-    # Load & prepare data (unchanged)
+    # 1️⃣ Load data
     households, products, transactions = load_data()
     if households is None or products is None or transactions is None:
         return jsonify({'error': 'Failed to load data from database'}), 500
 
-    X, y, merged_data = prepare_features(households, products, transactions)
+    # 2️⃣ Prepare features
+    X, y, _ = prepare_features(households, products, transactions)
+
+    # 3️⃣ Split
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42
     )
 
-    # Train
+    # 4️⃣ Train
     gb_model = GradientBoostingRegressor(
-        n_estimators=100, learning_rate=0.1, max_depth=3, random_state=42
+        n_estimators=100,
+        learning_rate=0.1,
+        max_depth=3,
+        random_state=42
     )
     gb_model.fit(X_train, y_train)
 
-    # Evaluate
+    # 5️⃣ Evaluate
     y_pred = gb_model.predict(X_test)
     mse = mean_squared_error(y_test, y_pred)
 
-    # Save timestamped model
+    # 6️⃣ Save models
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     model_filename = f'gb_model_{timestamp}.pkl'
-    joblib.dump(gb_model, model_filename)
+    joblib.dump(gb_model, model_filename)        # archived snapshot
+    joblib.dump(gb_model, 'gb_model.pkl')       # canonical current model
 
-    # **Also save the default model file** so /predict can load it
-    joblib.dump(gb_model, 'gb_model.pkl')
-
-    # Persist metrics into your SQL table (unchanged)
+    # 7️⃣ Persist metrics
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -233,10 +237,12 @@ def train_model():
     except Exception as e:
         print(f"Error storing metrics: {e}")
 
+    # 8️⃣ Return result
     return jsonify({
         'mse': mse,
         'model_filename': model_filename
     })
+
 
 
 # --- Model status endpoint ---
