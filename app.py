@@ -18,6 +18,9 @@ import os
 from dotenv import load_dotenv
 import json
 from werkzeug.utils import secure_filename
+import glob
+import os
+
 
 load_dotenv()
 
@@ -268,22 +271,39 @@ def get_model_status():
 # --- Prediction endpoint ---
 @app.route('/predict')
 def predict():
-    model = joblib.load('gb_model.pkl')
-    hh, pr, tr = load_data()
-    X, _, merged = prepare_features(hh, pr, tr)
+    # 1) Find all timestamped model files
+    candidates = glob.glob('gb_model_*.pkl')
+    if not candidates:
+        return jsonify({
+            'error': 'No model found—please GET /train_model first'
+        }), 404
+
+    # 2) Pick the newest one by creation time
+    latest_model = max(candidates, key=os.path.getctime)
+
+    # 3) Load it
+    model = joblib.load(latest_model)
+
+    # 4) Your existing predict logic
+    households, products, transactions = load_data()
+    X, _, merged = prepare_features(households, products, transactions)
     preds = model.predict(X)
     merged['predicted_spend'] = preds
+
     top = (
-        merged.groupby(['DEPARTMENT','COMMODITY'])
+        merged
+        .groupby(['DEPARTMENT','COMMODITY'])
         .agg({'predicted_spend':'mean','PRODUCT_NUM':'count'})
         .sort_values('predicted_spend', ascending=False)
         .head(10)
     )
+
     return jsonify({
         'department_commodity': top.index.tolist(),
         'predicted_spend': top['predicted_spend'].round(2).tolist(),
         'product_count': top['PRODUCT_NUM'].tolist()
     })
+
 
 # --- Analytics endpoints ---
 @app.route('/get_analytics')
