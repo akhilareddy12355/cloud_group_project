@@ -35,7 +35,7 @@ engine = create_engine(connection_string)
 
 def get_db_connection():
     # Note: password here should be the plain text version, *not* URL-encoded
-    raw_password = 'Reddy1234'
+    password = 'Reddy1234'
     conn_str = (
         'DRIVER={ODBC Driver 17 for SQL Server};'
         f"SERVER={server};"
