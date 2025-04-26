@@ -64,6 +64,8 @@ db.sqlite3-journal
 # Flask stuff:
 instance/
 .webassets-cache
+!instance/gb_model.pkl
+
 
 # Scrapy stuff:
 .scrapy
