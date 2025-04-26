@@ -19,10 +19,10 @@ from dotenv import load_dotenv
 app = Flask(__name__)
 
 
-server = 'retaildata-server.database.windows.net'
-database = 'RetailData'
-username = 'user'
-password = 'Retail@1234'
+server = 'kogerserver2025.database.windows.net'
+database = 'krogerdb'
+username = 'Akhila'
+password = 'Reddy1234'
 password = urllib.parse.quote_plus(password)
 
 connection_string = f"mssql+pyodbc://{username}:{password}@{server}/{database}?driver=ODBC+Driver+17+for+SQL+Server"
@@ -34,10 +34,10 @@ engine = create_engine(connection_string)
 def get_db_connection():
     conn = pyodbc.connect(
         'DRIVER={ODBC Driver 17 for SQL Server};'
-        'SERVER=retaildata-server.database.windows.net;'
-        'DATABASE=RetailData;'
-        'UID=user;'
-        'PWD=Retail@1234'
+        'SERVER=kogerserver2025.database.windows.net;'
+        'DATABASE=;krogerdb'
+        'UID=Akhila;'
+        'PWD=Reddy1234'
     )
     return conn
 
