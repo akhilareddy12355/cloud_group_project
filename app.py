@@ -21,7 +21,7 @@ app = Flask(__name__)
 
 server = 'kogerserver2025.database.windows.net'
 database = 'krogerdb'
-username = 'Akhila'
+username = 'akhila'
 password = 'Reddy1234'
 password = urllib.parse.quote_plus(password)
 
@@ -41,7 +41,7 @@ def get_db_connection():
         f"SERVER={server};"
         f"DATABASE={database};"
         f"UID={username};"
-        f"PWD={raw_password};"
+        f"PWD={password};"
     )
     return pyodbc.connect(conn_str)
 
