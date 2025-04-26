@@ -61,31 +61,117 @@ def get_db_connection():
     return pyodbc.connect(conn_str)
 
 # --- Streaming endpoint to avoid OOM on large payloads ---
-@app.route('/demographicsandengagement', methods=['GET'])
+# --- Dashboard: Demographics & Engagement ---
+@app.route('/demographicsandengagement')
 def demographicsandengagement():
-    query = """
+    conn = get_db_connection()
+    # Aggregate spend by household demographics
+    demo_query = """
         SELECT hh.HH_SIZE, hh.INCOME_RANGE, hh.CHILDREN, SUM(tr.SPEND) AS TOTAL_SPEND
         FROM transactions tr
         INNER JOIN households hh ON tr.HSHD_NUM = hh.HSHD_NUM
         GROUP BY hh.HH_SIZE, hh.INCOME_RANGE, hh.CHILDREN
     """
+    data_df = pd.read_sql_query(demo_query, conn)
 
-    def generate():
-        yield "["               # start JSON array
-        first = True
-        for chunk_df in pd.read_sql_query(query, engine, chunksize=2000):
-            records = chunk_df.to_dict(orient="records")
-            chunk_json = json.dumps(records)[1:-1]  # strip outer [ ]
-            if not first:
-                yield ","
-            yield chunk_json
-            first = False
-        yield "]"               # close JSON array
+    # Year-over-Year Spend
+    yoy_query = """
+        SELECT YEAR, SUM(SPEND) AS TOTAL_SPEND
+        FROM transactions
+        GROUP BY YEAR
+        ORDER BY YEAR
+    """
+    yoy_df = pd.read_sql_query(yoy_query, conn)
 
-    return Response(
-        stream_with_context(generate()),
-        mimetype="application/json"
+    # Product Category Popularity
+    cat_query = """
+        SELECT pr.DEPARTMENT, SUM(tr.UNITS) AS TOTAL_UNITS
+        FROM transactions tr
+        INNER JOIN products pr ON tr.PRODUCT_NUM = pr.PRODUCT_NUM
+        GROUP BY pr.DEPARTMENT
+        ORDER BY TOTAL_UNITS DESC
+    """
+    cat_df = pd.read_sql_query(cat_query, conn)
+
+    # Seasonal Spending Patterns
+    seasonal_query = """
+        SELECT WEEK_NUM, SUM(SPEND) AS TOTAL_SPEND
+        FROM transactions
+        GROUP BY WEEK_NUM
+        ORDER BY WEEK_NUM
+    """
+    seasonal_df = pd.read_sql_query(seasonal_query, conn)
+
+    # Brand & Organic Preferences
+    brand_query = """
+        SELECT pr.BRAND_TY, pr.NATURAL_ORGANIC_FLAG, SUM(tr.UNITS) AS TOTAL_UNITS
+        FROM transactions tr
+        INNER JOIN products pr ON tr.PRODUCT_NUM = pr.PRODUCT_NUM
+        GROUP BY pr.BRAND_TY, pr.NATURAL_ORGANIC_FLAG
+    """
+    brand_df = pd.read_sql_query(brand_query, conn)
+
+    conn.close()
+
+    # --- Build Plotly charts ---
+    # 1) Household Size vs Spend
+    hh_df = data_df.groupby('HH_SIZE')['TOTAL_SPEND'].sum().reset_index()
+    hh_size_fig = px.bar(hh_df, x='HH_SIZE', y='TOTAL_SPEND',
+                         title='Household Size vs Total Spend')
+    hh_size_fig.update_layout(margin=dict(l=20,r=20,t=40,b=20))
+    hh_size_plot = hh_size_fig.to_html(full_html=False)
+
+    # 2) Income Range vs Spend
+    inc_df = data_df.groupby('INCOME_RANGE')['TOTAL_SPEND'].sum().reset_index()
+    income_fig = px.bar(inc_df, x='INCOME_RANGE', y='TOTAL_SPEND',
+                        title='Income Range vs Total Spend')
+    income_fig.update_layout(margin=dict(l=20,r=20,t=40,b=20))
+    income_plot = income_fig.to_html(full_html=False)
+
+    # 3) Presence of Children vs Spend
+    ch_df = data_df.groupby('CHILDREN')['TOTAL_SPEND'].sum().reset_index()
+    children_fig = px.bar(ch_df, x='CHILDREN', y='TOTAL_SPEND',
+                         title='Presence of Children vs Total Spend')
+    children_fig.update_layout(margin=dict(l=20,r=20,t=40,b=20))
+    children_plot = children_fig.to_html(full_html=False)
+
+    # 4) Year-over-Year Spend
+    yoy_fig = px.line(yoy_df, x='YEAR', y='TOTAL_SPEND',
+                      title='Year-over-Year Household Spending', markers=True)
+    yoy_fig.update_layout(margin=dict(l=20,r=20,t=40,b=20))
+    yoy_spend_plot = yoy_fig.to_html(full_html=False)
+
+    # 5) Category Popularity
+    cat_fig = px.bar(cat_df, x='DEPARTMENT', y='TOTAL_UNITS',
+                     title='Product Categories by Popularity')
+    cat_fig.update_layout(margin=dict(l=20,r=20,t=40,b=20))
+    category_popularity_plot = cat_fig.to_html(full_html=False)
+
+    # 6) Seasonal Patterns
+    seasonal_fig = px.line(seasonal_df, x='WEEK_NUM', y='TOTAL_SPEND',
+                           title='Seasonal Spending Patterns', markers=True)
+    seasonal_fig.update_layout(margin=dict(l=20,r=20,t=40,b=20))
+    seasonal_plot = seasonal_fig.to_html(full_html=False)
+
+    # 7) Brand & Organic Preferences
+    brand_fig = px.bar(brand_df, x='BRAND_TY', y='TOTAL_UNITS',
+                       color='NATURAL_ORGANIC_FLAG', barmode='group',
+                       title='Brand & Organic Preferences')
+    brand_fig.update_layout(margin=dict(l=20,r=20,t=40,b=20))
+    brand_pref_plot = brand_fig.to_html(full_html=False)
+
+    # Render the dashboard template
+    return render_template(
+        'demographicsandengagement.html',
+        hh_size_plot=hh_size_plot,
+        income_plot=income_plot,
+        children_plot=children_plot,
+        yoy_spend_plot=yoy_spend_plot,
+        category_popularity_plot=category_popularity_plot,
+        seasonal_plot=seasonal_plot,
+        brand_pref_plot=brand_pref_plot
     )
+
 
 # --- Home & redirect ---
 @app.route('/')
