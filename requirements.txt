@@ -1,2 +1,8 @@
 Flask==3.0.0
 pyodbc==4.0.35
+numpy==1.26.4
+pandas==2.2.2
+SQLAlchemy==2.0.30
+plotly==5.21.0
+scikit-learn==1.4.2
+python-dotenv==1.0.1
