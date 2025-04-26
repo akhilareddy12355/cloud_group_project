@@ -269,27 +269,30 @@ def get_model_status():
     return jsonify({'exists': False})
 
 # --- Prediction endpoint ---
+
 @app.route('/predict')
 def predict():
-    # 1) Find all timestamped model files
+    # 1) Look for any saved models
     candidates = glob.glob('gb_model_*.pkl')
+
+    # 2) If none exist yet, trigger a train and then re-scan
     if not candidates:
-        return jsonify({
-            'error': 'No model found—please GET /train_model first'
-        }), 404
+        train_model()                         # trains & writes at least one gb_model_<ts>.pkl
+        candidates = glob.glob('gb_model_*.pkl')
 
-    # 2) Pick the newest one by creation time
+    # 3) If we still have none, error out
+    if not candidates:
+        return jsonify({ 'error': 'Model training failed; please try again.' }), 500
+
+    # 4) Otherwise load the newest one
     latest_model = max(candidates, key=os.path.getctime)
-
-    # 3) Load it
     model = joblib.load(latest_model)
 
-    # 4) Your existing predict logic
+    # 5) Your existing prediction logic…
     households, products, transactions = load_data()
     X, _, merged = prepare_features(households, products, transactions)
     preds = model.predict(X)
     merged['predicted_spend'] = preds
-
     top = (
         merged
         .groupby(['DEPARTMENT','COMMODITY'])
@@ -297,13 +300,11 @@ def predict():
         .sort_values('predicted_spend', ascending=False)
         .head(10)
     )
-
     return jsonify({
         'department_commodity': top.index.tolist(),
         'predicted_spend': top['predicted_spend'].round(2).tolist(),
         'product_count': top['PRODUCT_NUM'].tolist()
     })
-
 
 # --- Analytics endpoints ---
 @app.route('/get_analytics')
