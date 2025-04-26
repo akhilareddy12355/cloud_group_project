@@ -31,15 +31,19 @@ connection_string = f"mssql+pyodbc://{username}:{password}@{server}/{database}?d
 engine = create_engine(connection_string)
 
 # Database connection function using pyodbc
+# after your existing server/database/username/password definitions…
+
 def get_db_connection():
-    conn = pyodbc.connect(
+    # Note: password here should be the plain text version, *not* URL-encoded
+    raw_password = 'Reddy1234'
+    conn_str = (
         'DRIVER={ODBC Driver 17 for SQL Server};'
-        'SERVER=kogerserver2025.database.windows.net;'
-        'DATABASE=;krogerdb'
-        'UID=Akhila;'
-        'PWD=Reddy1234'
+        f"SERVER={server};"
+        f"DATABASE={database};"
+        f"UID={username};"
+        f"PWD={raw_password};"
     )
-    return conn
+    return pyodbc.connect(conn_str)
 
 @app.route('/demographicsandengagement', methods=['GET'])
 def demographicsandengagement():
